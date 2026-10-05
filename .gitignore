@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Тесты
+.pytest_cache/
+
+# Артефакты отчётов
+reports/
+charts/
+audit/*.json
+
+# IDE
+.idea/
+.vscode/
