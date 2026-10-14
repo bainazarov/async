@@ -3,6 +3,8 @@ import logging
 import aiohttp
 from aiohttp import ClientSession
 
+from .html_parser import HTMLParser
+
 logger = logging.getLogger(__name__)
 
 
@@ -11,6 +13,7 @@ class AsyncCrawler:
         self.max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._session: aiohttp.ClientSession | None = None
+        self._parser = HTMLParser()
 
     def _get_session(self) -> ClientSession | None:
         if self._session is None or self._session.closed:
@@ -43,6 +46,10 @@ class AsyncCrawler:
                 logger.warning("Сетевая ошибка %s: %s", url, e)
 
         return ""
+
+    async def fetch_and_parse(self, url: str) -> dict:
+        html = await self.fetch_url(url)
+        return await self._parser.parse_html(html, url)
 
     async def fetch_urls(self, urls: list[str]) -> dict[str, str]:
         tasks = [self.fetch_url(url) for url in urls]
