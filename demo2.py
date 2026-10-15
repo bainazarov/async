@@ -26,7 +26,7 @@ def print_result(result: dict) -> None:
         return
 
     print(f"  Заголовок:   {result['title'] or '—'}")
-    print(f"  Описание:    {result['description'][:80] or '—'}")
+    print(f"  Описание:    {result['metadata']['description'][:80] or '—'}")
     print(f"  Символов:    {result['text_length']}")
     print(f"  Ссылок:      {result['links_count']}")
     print(f"  Изображений: {result['images_count']}")

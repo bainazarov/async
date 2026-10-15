@@ -115,8 +115,7 @@ class HTMLParser:
         return {
             "url": url,
             "title": metadata["title"],
-            "description": metadata["description"],
-            "keywords": metadata["keywords"],
+            "metadata": metadata,
             "text": text,
             "text_length": len(text),
             "links": links,
