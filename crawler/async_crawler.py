@@ -73,6 +73,7 @@ class AsyncCrawler:
         self.robots_blocked: set[str] = set()
         self._start_domains: set[str] = set()
         self._pages_fetched = 0
+        self._pages_lock = asyncio.Lock()
         self._request_times: deque[float] = deque()
 
     def _get_session(self) -> ClientSession | None:
@@ -249,17 +250,18 @@ class AsyncCrawler:
         while True:
             url = await queue.wait_next()
             try:
-                if self._pages_fetched >= max_pages:
-                    continue
-
                 if not await self._robots_allows(url):
                     self.failed_urls[url] = "blocked by robots.txt"
                     queue.mark_failed(url, "blocked by robots.txt")
                     continue
 
                 depth = queue.get_depth(url)
-                self.visited_urls.add(url)
-                self._pages_fetched += 1
+
+                async with self._pages_lock:
+                    if self._pages_fetched >= max_pages:
+                        continue
+                    self.visited_urls.add(url)
+                    self._pages_fetched += 1
 
                 result = await self.fetch_and_parse(url)
 
