@@ -9,6 +9,7 @@ import re
 import time
 from aiohttp import ClientSession
 from collections import deque
+from datetime import datetime, timezone
 from urllib.parse import ParseResult, urlparse, urlunparse
 
 from .circuit_breaker import CircuitBreaker
@@ -60,6 +61,7 @@ class AsyncCrawler:
             circuit_failure_threshold: int = 5,
             circuit_recovery_timeout: float = 30.0,
             limiter_max_backoff: float = 30.0,
+            storage: DataStorage | None = None,
     ):
         self.max_concurrent = max_concurrent
         self.max_depth = max_depth
@@ -111,6 +113,7 @@ class AsyncCrawler:
         self._pages_fetched = 0
         self._pages_lock = asyncio.Lock()
         self._request_times: deque[float] = deque()
+        self.storage = storage
 
     def _get_session(self) -> ClientSession | None:
         if self._session is None or self._session.closed:
@@ -159,19 +162,26 @@ class AsyncCrawler:
     async def fetch_url(self, url: str, retry_attempt: int = 0) -> str:
         logger.info("Начало загрузки: %s (попытка %d)", url, retry_attempt + 1)
         self._get_session()
-        domain = urlparse(url).netloc
+        if not await self._before_fetch(url):
+            return ""
+        html, _, _ = await self._fetch_with_retry(url)
+        return html
 
+    async def _before_fetch(self, url: str) -> bool:
         if not await self._robots_allows(url):
-            return ""
-
+            return False
+        domain = urlparse(url).netloc
         if self._circuit is not None and await self._circuit.is_open(domain):
-            logger.warning("Circuit breaker открыт для %s — пропускаем %s", domain, url)
+            logger.warning("Circuit breaker открыт для %s — пропускаем %s",
+                           domain, url)
             self.failed_urls[url] = "circuit breaker open"
-            return ""
+            return False
+        return True
 
+    async def _fetch_with_retry(self, url: str) -> tuple[str, int, str]:
         try:
             return await self.retry_strategy.execute_with_retry(
-                self._fetch_once, url, retry_attempt=retry_attempt)
+                self._fetch_once, url)
         except PermanentError as e:
             logger.error("Постоянная ошибка, повторы не помогут: %s", e)
             self._permanent_errors[url] = f"{type(e).__name__}: {e}"
@@ -179,9 +189,9 @@ class AsyncCrawler:
         except (TransientError, NetworkError) as e:
             logger.error("Не удалось загрузить %s после повторов: %s", url, e)
             self.failed_urls[url] = f"{type(e).__name__}: {e}"
-        return ""
+        return "", 0, ""
 
-    async def _fetch_once(self, url: str, retry_attempt: int = 0) -> str:
+    async def _fetch_once(self, url: str, retry_attempt: int = 0) -> tuple[str, int, str]:
         session = self._get_session()
         domain = urlparse(url).netloc
         await self._limiter.acquire(domain)
@@ -193,12 +203,14 @@ class AsyncCrawler:
                 async with session.get(url, headers=headers, timeout=timeout) as response:
                     response.raise_for_status()
                     html = await response.text()
+                    status = response.status
+                    content_type = response.headers.get("Content-Type", "")
             self._limiter.reset_backoff(domain)
             if self._circuit is not None:
                 await self._circuit.record_success(domain)
             logger.info("Успешно загружено: %s [%d] (%d байт)",
                         url, response.status, len(html))
-            return html
+            return html, status, content_type
 
         except aiohttp.ClientResponseError as e:
             error = error_from_status(e.status, url, self._parse_retry_after(e))
@@ -234,11 +246,27 @@ class AsyncCrawler:
             return None
 
     async def fetch_and_parse(self, url: str) -> dict:
-        html = await self.fetch_url(url)
+        if not await self._before_fetch(url):
+            return {"url": url, "error": "skipped: robots.txt или circuit breaker"}
+        html, status, content_type = await self._fetch_with_retry(url)
         try:
-            return await self._parser.parse_html(html, url)
+            result = await self._parser.parse_html(html, url)
         except Exception as e:
             raise ParseError(f"{type(e).__name__}: {e}", url=url) from e
+        if "error" not in result:
+            result["status_code"] = status
+            result["content_type"] = content_type
+            result["crawled_at"] = datetime.now(timezone.utc).isoformat()
+        return result
+
+    async def _save_result(self, result: dict) -> None:
+        if self.storage is None:
+            return
+        try:
+            await self.storage.save(result)
+        except Exception as e:
+            logger.error("Ошибка сохранения результата для %s: %s",
+                         result.get("url"), e)
 
     async def fetch_urls(self, urls: list[str]) -> dict[str, str]:
         tasks = [self.fetch_url(url) for url in urls]
@@ -352,6 +380,7 @@ class AsyncCrawler:
 
                 self.processed_urls[url] = result
                 queue.mark_processed(url)
+                await self._save_result(result)
 
                 if depth >= max_depth:
                     continue
@@ -464,3 +493,6 @@ class AsyncCrawler:
             await self._session.close()
             logger.debug("Сессия закрыта")
         await self._robots.close()
+        if self.storage is not None:
+            await self.storage.close()
+            logger.debug("Хранилище закрыто")

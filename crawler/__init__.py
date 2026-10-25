@@ -8,14 +8,20 @@ from .rate_limiter import RateLimiter
 from .retry import RetryStats, RetryStrategy
 from .robots_parser import RobotsParser
 from .semaphore_manager import SemaphoreManager
+from .storage import (CSVStorage, DataStorage, JSONStorage, MultiStorage,
+                      SQLiteStorage, normalize_record)
 
 __all__ = [
     "AsyncCrawler",
+    "CSVStorage",
     "CircuitBreaker",
     "CircuitOpenError",
     "CrawlerError",
     "CrawlerQueue",
+    "DataStorage",
     "HTMLParser",
+    "JSONStorage",
+    "MultiStorage",
     "NetworkError",
     "ParseError",
     "PermanentError",
@@ -24,6 +30,8 @@ __all__ = [
     "RetryStrategy",
     "RobotsParser",
     "SemaphoreManager",
+    "SQLiteStorage",
     "TransientError",
     "error_from_status",
+    "normalize_record",
 ]
