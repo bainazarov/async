@@ -21,6 +21,7 @@ from .rate_limiter import RateLimiter
 from .retry import RetryStrategy
 from .robots_parser import RobotsParser
 from .semaphore_manager import SemaphoreManager
+from .storage import DataStorage
 
 logger = logging.getLogger(__name__)
 

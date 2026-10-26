@@ -12,6 +12,10 @@ reports/
 charts/
 audit/*.json
 
+# Данные краулера: каталог в репозитории держим, содержимое — нет
+data/*
+!data/.gitkeep
+
 # IDE
 .idea/
 .vscode/
