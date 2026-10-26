@@ -1,21 +1,16 @@
-# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 
-# Тесты
 .pytest_cache/
 
-# Артефакты отчётов
 reports/
 charts/
 audit/*.json
 
-# Данные краулера: каталог в репозитории держим, содержимое — нет
 data/*
 !data/.gitkeep
 
-# IDE
 .idea/
 .vscode/
