@@ -1,0 +1,25 @@
+start_urls:
+  - https://example.com
+
+max_pages: 100
+max_depth: 2
+max_concurrent: 10
+
+respect_robots: true
+requests_per_second: 2.0
+min_delay: 0.5
+
+sitemaps:
+  - https://example.com/sitemap.xml
+use_sitemaps: false
+
+include_patterns:
+  - "/article/"
+exclude_patterns:
+  - "/tag/"
+  - "\\.pdf$"
+
+storage:
+  json: data/pages.json
+  csv: data/pages.csv
+  sqlite: data/pages.db

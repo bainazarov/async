@@ -21,6 +21,7 @@ from .rate_limiter import RateLimiter
 from .retry import RetryStrategy
 from .robots_parser import RobotsParser
 from .semaphore_manager import SemaphoreManager
+from .stats import CrawlerStats
 from .storage import DataStorage
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class AsyncCrawler:
             circuit_recovery_timeout: float = 30.0,
             limiter_max_backoff: float = 30.0,
             storage: DataStorage | None = None,
+            stats: CrawlerStats | None = None,
     ):
         self.max_concurrent = max_concurrent
         self.max_depth = max_depth
@@ -115,6 +117,7 @@ class AsyncCrawler:
         self._pages_lock = asyncio.Lock()
         self._request_times: deque[float] = deque()
         self.storage = storage
+        self.stats = stats
 
     def _get_session(self) -> ClientSession | None:
         if self._session is None or self._session.closed:
@@ -362,6 +365,8 @@ class AsyncCrawler:
                 if not await self._robots_allows(url):
                     self.failed_urls[url] = "blocked by robots.txt"
                     queue.mark_failed(url, "blocked by robots.txt")
+                    if self.stats is not None:
+                        self.stats.record_failure(url)
                     continue
 
                 depth = queue.get_depth(url)
@@ -377,11 +382,15 @@ class AsyncCrawler:
                 if "error" in result:
                     self.failed_urls.setdefault(url, result["error"])
                     queue.mark_failed(url, result["error"])
+                    if self.stats is not None:
+                        self.stats.record_failure(url)
                     continue
 
                 self.processed_urls[url] = result
                 queue.mark_processed(url)
                 await self._save_result(result)
+                if self.stats is not None:
+                    self.stats.record_page(url, result.get("status_code", 0))
 
                 if depth >= max_depth:
                     continue

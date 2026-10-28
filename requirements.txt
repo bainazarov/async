@@ -3,3 +3,5 @@ aiofiles
 aiosqlite
 beautifulsoup4
 lxml
+pytest
+pyyaml
