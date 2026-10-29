@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from .async_crawler import AsyncCrawler
 from .config import load_config
@@ -15,8 +16,13 @@ logger = logging.getLogger(__name__)
 
 _CRAWLER_KEYS = (
     "max_concurrent", "max_depth", "same_domain_only", "respect_robots",
-    "requests_per_second", "max_per_domain", "min_delay", "max_retries",
-    "retry_base_delay", "connect_timeout", "read_timeout", "total_timeout",
+    "requests_per_second", "max_per_domain", "per_domain_limit",
+    "min_delay", "jitter", "user_agent", "user_agents",
+    "max_retries", "retry_base_delay", "retry_backoff_factor",
+    "retry_max_delay", "connect_timeout", "read_timeout",
+    "total_timeout", "timeout_growth", "use_circuit_breaker",
+    "circuit_failure_threshold", "circuit_recovery_timeout",
+    "limiter_max_backoff",
 )
 
 
@@ -62,8 +68,30 @@ class AdvancedCrawler:
         if self.config.get("use_sitemaps"):
             for url in result:
                 sitemap_urls.extend(await self._sitemaps.urls_from_robots(url))
+        found: list[str] = []
         for sitemap in sitemap_urls:
-            result.extend(await self._sitemaps.fetch_sitemap(sitemap))
+            found.extend(await self._sitemaps.fetch_sitemap(sitemap))
+
+        if found:
+            allowed_hosts = set()
+            for url in result:
+                normalized = self.crawler._normalize_url(url)
+                if normalized:
+                    allowed_hosts.add(self.crawler._host(normalized))
+            same_domain = bool(self.config.get("same_domain_only"))
+            includes = [re.compile(p)
+                        for p in self.config.get("include_patterns") or []]
+            excludes = [re.compile(p)
+                        for p in self.config.get("exclude_patterns") or []]
+            added = 0
+            for url in found:
+                if self.crawler._should_follow(
+                        url, same_domain, includes, excludes,
+                        hosts=allowed_hosts):
+                    result.append(url)
+                    added += 1
+            logger.info("Sitemap: после фильтров отобрано %d/%d URL",
+                        added, len(found))
 
         return list(dict.fromkeys(result))
 

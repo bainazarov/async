@@ -190,9 +190,11 @@ class AsyncCrawler:
             logger.error("Постоянная ошибка, повторы не помогут: %s", e)
             self._permanent_errors[url] = f"{type(e).__name__}: {e}"
             self.failed_urls[url] = f"{type(e).__name__}: {e}"
+            return "", e.status or 0, ""
         except (TransientError, NetworkError) as e:
             logger.error("Не удалось загрузить %s после повторов: %s", url, e)
             self.failed_urls[url] = f"{type(e).__name__}: {e}"
+            return "", getattr(e, "status", None) or 0, ""
         return "", 0, ""
 
     async def _fetch_once(self, url: str, retry_attempt: int = 0) -> tuple[str, int, str]:
@@ -253,6 +255,10 @@ class AsyncCrawler:
         if not await self._before_fetch(url):
             return {"url": url, "error": "skipped: robots.txt или circuit breaker"}
         html, status, content_type = await self._fetch_with_retry(url)
+        if status == 0 or status >= 400:
+            return {"url": url,
+                    "error": self.failed_urls.get(url, f"HTTP {status}"),
+                    "status_code": status}
         try:
             result = await self._parser.parse_html(html, url)
         except Exception as e:
@@ -383,7 +389,7 @@ class AsyncCrawler:
                     self.failed_urls.setdefault(url, result["error"])
                     queue.mark_failed(url, result["error"])
                     if self.stats is not None:
-                        self.stats.record_failure(url)
+                        self.stats.record_failure(url, result.get("status_code"))
                     continue
 
                 self.processed_urls[url] = result
@@ -471,8 +477,10 @@ class AsyncCrawler:
             same_domain: bool,
             includes: list[re.Pattern],
             excludes: list[re.Pattern],
+            hosts: set[str] | None = None,
     ) -> bool:
-        if same_domain and self._host(url) not in self._start_domains:
+        allowed_hosts = self._start_domains if hosts is None else hosts
+        if same_domain and self._host(url) not in allowed_hosts:
             return False
         if includes and not any(p.search(url) for p in includes):
             return False

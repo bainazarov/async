@@ -34,8 +34,10 @@ class CrawlerStats:
         self.by_status[status_code] += 1
         self.by_domain[urlparse(url).netloc] += 1
 
-    def record_failure(self, url: str) -> None:
+    def record_failure(self, url: str, status_code: int | None = None) -> None:
         self.failed += 1
+        if status_code:
+            self.by_status[status_code] += 1
         self.by_domain[urlparse(url).netloc] += 1
 
     @property
